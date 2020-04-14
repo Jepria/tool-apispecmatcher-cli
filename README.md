@@ -1,0 +1,4 @@
+Пример запуска из Windows/cmd
+```
+java -jar "C:\work\bin-ext\build\org\jepria\tools\apispecmatcher-cli\1.0.0-SNAPSHOT\apispecmatcher-cli-1.0.0-SNAPSHOT.jar" --api-specs "C:\work\jepria-showcase\module\JepRiaShowcase\App\service-rest\src\api-spec\feature\swagger.json" --jaxrs-adapters "com.technology.jep.jepriashowcase.feature.rest.FeatureJaxrsAdapter;com.technology.jep.jepriashowcase.featureprocess.rest.FeatureProcessJaxrsAdapter" --project-classpath-jars-dirs "C:\work\jepria-showcase\module\JepRiaShowcase\App\service-rest\target\jepriashowcase-service-rest\WEB-INF\lib" --project-classpath-jars "C:\work\bin-ext\build\javax\servlet\servlet-api\3.0.1\servlet-api-3.0.1.jar" --project-source-root-dirs "C:\work\jepria-showcase\module\JepRiaShowcase\App\service-rest\src\main\java"
+```
