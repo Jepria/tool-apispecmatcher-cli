@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.TreeSet;
-import java.util.stream.Collectors;
 
 public class Main {
 
@@ -400,27 +399,20 @@ public class Main {
     @Override
     public void run() {
       try {
-        // get resources from files
-        List<Reader> apiSpecResources = apiSpecs.stream().map(file -> {
-          try {
-            return new FileReader(file);
-          } catch (FileNotFoundException e) {
-            throw new RuntimeException(e);
-          }
-        }).collect(Collectors.toList());
-
         // extract methods from resources
         List<Method> apiSpecMethods;
         List<Method> jaxrsMethods;
         {
           apiSpecMethods = new ArrayList<>();
           ApiSpecMethodExtractorJson ext1 = new ApiSpecMethodExtractorJson();
-          for (Reader r : apiSpecResources) {
-            List<Method> apiSpecMethodsForResource;
-            try (Reader r0 = r) {
-              apiSpecMethodsForResource = ext1.extract(r0);
+          for (File f: apiSpecs) {
+            List<ApiSpecMethodExtractorJson.ExtractedMethod> apiSpecMethodsForResource;
+            try (Reader r = new FileReader(f)) {
+              apiSpecMethodsForResource = ext1.extract(r);
             }
-            apiSpecMethods.addAll(apiSpecMethodsForResource);
+            for (ApiSpecMethodExtractorJson.ExtractedMethod method: apiSpecMethodsForResource) {
+              apiSpecMethods.add(method.method);
+            }
           }
           jaxrsMethods = new ArrayList<>();
 
@@ -439,8 +431,41 @@ public class Main {
           }
 
           for (String r : jaxrsAdapters) {
-            List<Method> jaxrsMethodsForResource = ext2.extract(r);
-            jaxrsMethods.addAll(jaxrsMethodsForResource);
+            List<JaxrsMethodExtractorCompiled.ExtractedMethod> jaxrsMethodsForResource = ext2.extract(r);
+
+            for (JaxrsMethodExtractorCompiled.ExtractedMethod method: jaxrsMethodsForResource) {
+
+              // show warnings
+              {
+                if (method.features.remove(JaxrsMethodExtractorCompiled.ExtractedMethod.Features.DYNAMIC__TYPE_UNDECLARED)) {
+                  // do nothing
+                }
+                if (method.features.remove(JaxrsMethodExtractorCompiled.ExtractedMethod.Features.STATIC__NO_SOURCE_TREE)) {
+                  // do nothing (must have been already processed above)
+                }
+                if (method.features.remove(JaxrsMethodExtractorCompiled.ExtractedMethod.Features.STATIC__NO_SOURCE_FILE)) {
+                  System.out.println("WARN: " + r + ": @" + method.method.httpMethod() + "_" + method.method.path() + ":");
+                  System.out.println("  No source file found for the class, unable to determine static response body type.");
+                }
+                if (method.features.remove(JaxrsMethodExtractorCompiled.ExtractedMethod.Features.STATIC__NO_SOURCE_METHOD)) {
+                  System.out.println("WARN: " + r + ": @" + method.method.httpMethod() + "_" + method.method.path() + ":");
+                  System.out.println("  No such method found in the source file, unable to determine static response body type. " +
+                          "The sources might have changed since the last compilation, try to recompile it.");
+                }
+                if (method.features.remove(JaxrsMethodExtractorCompiled.ExtractedMethod.Features.STATIC__VARIABLE_UNDECLARED)) {
+                  System.out.println("WARN: " + r + ": @" + method.method.httpMethod() + "_" + method.method.path() + ":");
+                  System.out.println("  No 'responseBody' variable declaration found in the method body, " +
+                          "unable to determine static response body type.");
+                }
+                // check all features consumed
+                if (method.features.size() > 0) {
+                  throw new IllegalStateException("All features must be consumed. Remained: " + method.features);
+                }
+              }
+
+              // add method
+              jaxrsMethods.add(method.method);
+            }
           }
         }
 
