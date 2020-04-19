@@ -6,10 +6,7 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.TreeSet;
+import java.util.*;
 
 public class Main {
 
@@ -399,22 +396,22 @@ public class Main {
     @Override
     public void run() {
       try {
-        // extract methods from resources
-        List<Method> apiSpecMethods;
-        List<Method> jaxrsMethods;
+        Map<String, List<ApiSpecMethodExtractorJson.ExtractedMethod>> apiSpecMethods;
         {
-          apiSpecMethods = new ArrayList<>();
+          apiSpecMethods = new HashMap<>();
           ApiSpecMethodExtractorJson ext1 = new ApiSpecMethodExtractorJson();
-          for (File f: apiSpecs) {
+          for (File f : apiSpecs) {
             List<ApiSpecMethodExtractorJson.ExtractedMethod> apiSpecMethodsForResource;
             try (Reader r = new FileReader(f)) {
               apiSpecMethodsForResource = ext1.extract(r);
             }
-            for (ApiSpecMethodExtractorJson.ExtractedMethod method: apiSpecMethodsForResource) {
-              apiSpecMethods.add(method.method);
-            }
+            apiSpecMethods.put(f.getAbsolutePath(), apiSpecMethodsForResource);
           }
-          jaxrsMethods = new ArrayList<>();
+        }
+
+        Map<String, List<JaxrsMethodExtractorCompiled.ExtractedMethod>> jaxrsMethods;
+        {
+          jaxrsMethods = new HashMap<>();
 
           JaxrsMethodExtractorCompiled ext2;
           {
@@ -432,45 +429,25 @@ public class Main {
 
           for (String r : jaxrsAdapters) {
             List<JaxrsMethodExtractorCompiled.ExtractedMethod> jaxrsMethodsForResource = ext2.extract(r);
-
-            for (JaxrsMethodExtractorCompiled.ExtractedMethod method: jaxrsMethodsForResource) {
-
-              // show warnings
-              {
-                if (method.features.remove(JaxrsMethodExtractorCompiled.ExtractedMethod.Features.DYNAMIC__TYPE_UNDECLARED)) {
-                  // do nothing
-                }
-                if (method.features.remove(JaxrsMethodExtractorCompiled.ExtractedMethod.Features.STATIC__NO_SOURCE_TREE)) {
-                  // do nothing (must have been already processed above)
-                }
-                if (method.features.remove(JaxrsMethodExtractorCompiled.ExtractedMethod.Features.STATIC__NO_SOURCE_FILE)) {
-                  System.out.println("WARN: " + r + ": @" + method.method.httpMethod() + "_" + method.method.path() + ":");
-                  System.out.println("  No source file found for the class, unable to determine static response body type.");
-                }
-                if (method.features.remove(JaxrsMethodExtractorCompiled.ExtractedMethod.Features.STATIC__NO_SOURCE_METHOD)) {
-                  System.out.println("WARN: " + r + ": @" + method.method.httpMethod() + "_" + method.method.path() + ":");
-                  System.out.println("  No such method found in the source file, unable to determine static response body type. " +
-                          "The sources might have changed since the last compilation, try to recompile it.");
-                }
-                if (method.features.remove(JaxrsMethodExtractorCompiled.ExtractedMethod.Features.STATIC__VARIABLE_UNDECLARED)) {
-                  System.out.println("WARN: " + r + ": @" + method.method.httpMethod() + "_" + method.method.path() + ":");
-                  System.out.println("  No 'responseBody' variable declaration found in the method body, " +
-                          "unable to determine static response body type.");
-                }
-                // check all features consumed
-                if (method.features.size() > 0) {
-                  throw new IllegalStateException("All features must be consumed. Remained: " + method.features);
-                }
-              }
-
-              // add method
-              jaxrsMethods.add(method.method);
-            }
+            jaxrsMethods.put(r, jaxrsMethodsForResource);
           }
         }
 
 
-        Matcher.MatchParams params = new Matcher.MatchParams(apiSpecMethods, jaxrsMethods);
+        List<Method> apiSpecMethodsAll = new ArrayList<>();
+        for (List<ApiSpecMethodExtractorJson.ExtractedMethod> ms: apiSpecMethods.values()) {
+          for (ApiSpecMethodExtractorJson.ExtractedMethod m: ms) {
+            apiSpecMethodsAll.add(m.method);
+          }
+        }
+        List<Method> jaxrsMethodsAll = new ArrayList<>();
+        for (List<JaxrsMethodExtractorCompiled.ExtractedMethod> ms: jaxrsMethods.values()) {
+          for (JaxrsMethodExtractorCompiled.ExtractedMethod m: ms) {
+            jaxrsMethodsAll.add(m.method);
+          }
+        }
+
+        Matcher.MatchParams params = new Matcher.MatchParams(apiSpecMethodsAll, jaxrsMethodsAll);
         Matcher.MatchResult matchResult = new MatcherImpl().match(params);
 
         if (matchResult.nonDocumentedMethods != null && !matchResult.nonDocumentedMethods.isEmpty() ||
