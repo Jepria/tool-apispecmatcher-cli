@@ -401,15 +401,34 @@ public class Main {
         boolean success = true;
 
         class ApiSpecMethodWithLocation {
-          public ApiSpecMethodExtractorJson.ExtractedMethod method;
+          public SpecMethod method;
           // original File
           public File location;
+
+          public String asString() {
+            return location.getAbsolutePath() + ": " + method.httpMethod() + " " + method.path();
+          }
+
+          @Override
+          public String toString() {
+            return asString();
+          }
+
         }
 
         class JaxrsMethodWithLocation {
-          public JaxrsMethodExtractorCompiled.ExtractedMethod method;
+          public JaxrsMethod method;
           // canonical classname of the container class
           public String location;
+
+          public String asString() {
+            return location + ": " + method.httpMethod() + " " + method.path();
+          }
+
+          @Override
+          public String toString() {
+            return asString();
+          }
         }
 
         List<ApiSpecMethodWithLocation> apiSpecMethods;
@@ -417,11 +436,11 @@ public class Main {
           apiSpecMethods = new ArrayList<>();
           ApiSpecMethodExtractorJson ext1 = new ApiSpecMethodExtractorJson();
           for (File f : apiSpecs) {
-            List<ApiSpecMethodExtractorJson.ExtractedMethod> apiSpecMethodsForResource;
+            List<SpecMethod> apiSpecMethodsForResource;
             try (Reader r = new FileReader(f)) {
               apiSpecMethodsForResource = ext1.extract(r);
             }
-            for (ApiSpecMethodExtractorJson.ExtractedMethod m: apiSpecMethodsForResource) {
+            for (SpecMethod m: apiSpecMethodsForResource) {
               ApiSpecMethodWithLocation apiSpecMethod = new ApiSpecMethodWithLocation();
               apiSpecMethod.method = m;
               apiSpecMethod.location = f;
@@ -448,8 +467,8 @@ public class Main {
           }
 
           for (String classname : jaxrsAdapters) {
-            List<JaxrsMethodExtractorCompiled.ExtractedMethod> jaxrsMethodsForResource = ext2.extract(classname);
-            for (JaxrsMethodExtractorCompiled.ExtractedMethod m: jaxrsMethodsForResource) {
+            List<JaxrsMethod> jaxrsMethodsForResource = ext2.extract(classname);
+            for (JaxrsMethod m: jaxrsMethodsForResource) {
               JaxrsMethodWithLocation jaxrsMethod = new JaxrsMethodWithLocation();
               jaxrsMethod.method = m;
               jaxrsMethod.location = classname;
@@ -475,23 +494,21 @@ public class Main {
               ApiSpecMethodWithLocation apiSpecMethod = it.next();
               List<JaxrsMethodWithLocation> mappings = new ArrayList<>();
               for (JaxrsMethodWithLocation jaxrsMethod : jaxrsMethods) {
-                if (mapper.map(apiSpecMethod.method.method, jaxrsMethod.method.method)) {
+                if (mapper.map(apiSpecMethod.method, jaxrsMethod.method)) {
                   mappings.add(jaxrsMethod);
                 }
               }
               if (mappings.size() == 0) {
                 System.out.println("FAIL: no Jaxrs method found for the ApiSpec method "
-                        + apiSpecMethod.location.getAbsolutePath() + ": "
-                        + apiSpecMethod.method.method.httpMethod() + " " + apiSpecMethod.method.method.path());
+                        + apiSpecMethod.asString());
                 success = false;
                 it.remove();
 
               } else if (mappings.size() > 1) {
                 System.out.println("FAIL: multiple Jaxrs methods found for the ApiSpec method "
-                        + apiSpecMethod.location.getAbsolutePath() + ": "
-                        + apiSpecMethod.method.method.httpMethod() + " " + apiSpecMethod.method.method.path());
+                        + apiSpecMethod.asString());
                 for (JaxrsMethodWithLocation mapping : mappings) {
-                  System.out.println("  " + mapping.location + ": " + mapping.method.method.httpMethod() + " " + mapping.method.method.path());
+                  System.out.println("  " + mapping.asString());
                 }
 
                 success = false;
@@ -513,24 +530,22 @@ public class Main {
               JaxrsMethodWithLocation jaxrsMethod = it.next();
               List<ApiSpecMethodWithLocation> mappings = new ArrayList<>();
               for (ApiSpecMethodWithLocation apiSpecMethod : apiSpecMethods) {
-                if (mapper.map(apiSpecMethod.method.method, jaxrsMethod.method.method)) {
+                if (mapper.map(apiSpecMethod.method, jaxrsMethod.method)) {
                   mappings.add(apiSpecMethod);
                 }
               }
               if (mappings.size() == 0) {
                 System.out.println("FAIL: no ApiSpec method found for the Jaxrs method "
-                        + jaxrsMethod.location + ": "
-                        + jaxrsMethod.method.method.httpMethod() + " " + jaxrsMethod.method.method.path());
+                        + jaxrsMethod.asString());
 
                 success = false;
                 it.remove();
 
               } else if (mappings.size() > 1) {
                 System.out.println("FAIL: multiple ApiSpec methods found for the Jaxrs method "
-                        + jaxrsMethod.location + ": "
-                        + jaxrsMethod.method.method.httpMethod() + " " + jaxrsMethod.method.method.path());
+                        + jaxrsMethod.asString());
                 for (ApiSpecMethodWithLocation mapping : mappings) {
-                  System.out.println("  " + mapping.location.getAbsolutePath() + ": " + mapping.method.method.httpMethod() + " " + mapping.method.method.path());
+                  System.out.println("  " + mapping.asString());
                 }
 
                 success = false;
@@ -555,10 +570,10 @@ public class Main {
         // match methods
         MethodMatcher matcher = new MethodMatcherImpl();
         for (MethodMapping mm: methodMappings) {
-          if (!matcher.match(mm.jaxrsMethod.method.method, mm.apiSpecMethod.method.method)) {
+          if (!matcher.match(mm.apiSpecMethod.method, mm.jaxrsMethod.method)) {
             System.out.println("FAIL: Method match failed:");
-            System.out.println("  " + mm.jaxrsMethod.location + ": " + mm.jaxrsMethod.method.method.httpMethod() + " " + mm.jaxrsMethod.method.method.path());
-            System.out.println("  <=> " + mm.apiSpecMethod.location.getAbsolutePath() + ": " + mm.apiSpecMethod.method.method.httpMethod() + " " + mm.jaxrsMethod.method.method.path());
+            System.out.println("  " + mm.jaxrsMethod.asString());
+            System.out.println("  <=> " + mm.apiSpecMethod.asString());
 
             success = false;
           }
