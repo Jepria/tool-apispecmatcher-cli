@@ -123,6 +123,8 @@ public class Main {
       boolean failed = false;
       List<String> failMessages = new ArrayList<>();
 
+      List<File> jaxrsAdapterSources = new ArrayList<>();
+
       Path mavenProject = Paths.get(mavenProjectArg);
       if (!Files.exists(mavenProject)) {
         failed = true;
@@ -150,6 +152,7 @@ public class Main {
                     Path relative = javaSourceRoot.relativize(path);
                     String str = relative.toString();
                     String classname = str.substring(0, str.length() - ".java".length()).replaceAll("/|\\\\", ".");
+                    jaxrsAdapterSources.add(path.toFile());
                     jaxrsAdapters.add(classname);
                   });
         } catch (IOException e) {
@@ -268,6 +271,7 @@ public class Main {
         // log everything
         out.println("The following components discovered in the project [" + mavenProjectArg + "]:");
         out.println("apiSpecs: " + apiSpecs);
+        out.println("jaxrsAdapter sources: " + jaxrsAdapterSources);
         out.println("jaxrsAdapters: " + jaxrsAdapters);
         out.println("projectClasspathClassDirs: " + projectClasspathClassDirs);
         out.println("projectClasspathJarDirs: " + projectClasspathJarDirs);
@@ -565,6 +569,101 @@ public class Main {
           }
         }
 
+
+        // warn about static response body type extraction statuses
+        List<JaxrsMethodWithLocation> jaxrsMethodsNoSourceTree = new ArrayList<>();
+        for (MethodMapping mm: methodMappings) {
+          if (mm.apiSpecMethod.method.responseBodySchema() != null &&
+                  mm.jaxrsMethod.method.responseBodySchemaExtractionStatus() == JaxrsMethod.ResponseBodySchemaExtractionStatus.STATIC_NO_SOURCE_TREE) {
+            jaxrsMethodsNoSourceTree.add(mm.jaxrsMethod);
+          }
+        }
+        if (!jaxrsMethodsNoSourceTree.isEmpty()) {
+          // such a pretty printing ...
+          if (jaxrsMethodsNoSourceTree.size() == 1) {
+            System.out.println("WARN: For the following method, the response body type could be determined " +
+                    "from the sources, but actually no source tree provided:");
+            System.out.println("  " + jaxrsMethodsNoSourceTree.get(0).asString());
+          } else {
+            System.out.println("WARN: For the following methods, the response body type could be determined " +
+                    "from the sources, but actually no source tree provided:");
+            for (JaxrsMethodWithLocation jm: jaxrsMethodsNoSourceTree) {
+              System.out.println("  " + jm.asString());
+            }
+          }
+
+        } else {
+          // only makes sense if no STATIC_NO_SOURCE_TREE status found
+          List<JaxrsMethodWithLocation> jaxrsMethodsNoSourceFile = new ArrayList<>();
+          for (MethodMapping mm: methodMappings) {
+            if (mm.apiSpecMethod.method.responseBodySchema() != null &&
+                    mm.jaxrsMethod.method.responseBodySchemaExtractionStatus() == JaxrsMethod.ResponseBodySchemaExtractionStatus.STATIC_NO_SOURCE_FILE) {
+              jaxrsMethodsNoSourceFile.add(mm.jaxrsMethod);
+            }
+          }
+          if (!jaxrsMethodsNoSourceFile.isEmpty()) {
+            // such a pretty printing ...
+            if (jaxrsMethodsNoSourceFile.size() == 1) {
+              System.out.println("WARN: For the following method, the response body type could be determined " +
+                      "from the source file, but actually no source found for the class:");
+              System.out.println("  " + jaxrsMethodsNoSourceFile.get(0).asString());
+            } else {
+              System.out.println("WARN: For the following methods, the response body type could be determined " +
+                      "from the source file, but actually no source found for the class:");
+              for (JaxrsMethodWithLocation jm: jaxrsMethodsNoSourceFile) {
+                System.out.println("  " + jm.asString());
+              }
+            }
+          }
+
+          List<JaxrsMethodWithLocation> jaxrsMethodsNoSourceMethod = new ArrayList<>();
+          for (MethodMapping mm: methodMappings) {
+            if (mm.apiSpecMethod.method.responseBodySchema() != null &&
+                    mm.jaxrsMethod.method.responseBodySchemaExtractionStatus() == JaxrsMethod.ResponseBodySchemaExtractionStatus.STATIC_NO_SOURCE_METHOD) {
+              jaxrsMethodsNoSourceMethod.add(mm.jaxrsMethod);
+            }
+          }
+          if (!jaxrsMethodsNoSourceMethod.isEmpty()) {
+            // such a pretty printing ...
+            if (jaxrsMethodsNoSourceMethod.size() == 1) {
+              System.out.println("WARN: For the following method, the response body type could be determined " +
+                      "from the source file, but actually no such method found in the source file " +
+                      "(try to recompile the project):");
+              System.out.println("  " + jaxrsMethodsNoSourceMethod.get(0).asString());
+            } else {
+              System.out.println("WARN: For the following methods, the response body type could be determined " +
+                      "from the source file, but actually no such method found in the source file " +
+                      "(try to recompile the project):");
+              for (JaxrsMethodWithLocation jm: jaxrsMethodsNoSourceMethod) {
+                System.out.println("  " + jm.asString());
+              }
+            }
+          }
+
+          List<JaxrsMethodWithLocation> jaxrsMethodsNoVarDecl = new ArrayList<>();
+          for (MethodMapping mm: methodMappings) {
+            if (mm.apiSpecMethod.method.responseBodySchema() != null &&
+                    mm.jaxrsMethod.method.responseBodySchemaExtractionStatus() == JaxrsMethod.ResponseBodySchemaExtractionStatus.STATIC_VARIABLE_UNDECLARED) {
+              jaxrsMethodsNoVarDecl.add(mm.jaxrsMethod);
+            }
+          }
+          if (!jaxrsMethodsNoVarDecl.isEmpty()) {
+            // such a pretty printing ...
+            if (jaxrsMethodsNoVarDecl.size() == 1) {
+              System.out.println("WARN: For the following method, the response body type could be determined " +
+                      "from the source file, namely from the 'responseBody' variable declared in the method body, " +
+                      "but actually no such variable declration found (try to declare the 'responseBody' variable):");
+              System.out.println("  " + jaxrsMethodsNoVarDecl.get(0).asString());
+            } else {
+              System.out.println("WARN: For the following methods, the response body type could be determined " +
+                      "from the source file, namely from the 'responseBody' variable declared in the method body, " +
+                      "but actually no such variable declration found (try to declare the 'responseBody' variable):");
+              for (JaxrsMethodWithLocation jm: jaxrsMethodsNoVarDecl) {
+                System.out.println("  " + jm.asString());
+              }
+            }
+          }
+        }
 
 
         // match methods
