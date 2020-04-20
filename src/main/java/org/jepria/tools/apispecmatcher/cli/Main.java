@@ -395,24 +395,44 @@ public class Main {
 
     @Override
     public void run() {
+
       try {
-        Map<String, List<ApiSpecMethodExtractorJson.ExtractedMethod>> apiSpecMethods;
+
+        boolean success = true;
+
+        class ApiSpecMethodWithLocation {
+          public ApiSpecMethodExtractorJson.ExtractedMethod method;
+          // original File
+          public File location;
+        }
+
+        class JaxrsMethodWithLocation {
+          public JaxrsMethodExtractorCompiled.ExtractedMethod method;
+          // canonical classname of the container class
+          public String location;
+        }
+
+        List<ApiSpecMethodWithLocation> apiSpecMethods;
         {
-          apiSpecMethods = new HashMap<>();
+          apiSpecMethods = new ArrayList<>();
           ApiSpecMethodExtractorJson ext1 = new ApiSpecMethodExtractorJson();
           for (File f : apiSpecs) {
             List<ApiSpecMethodExtractorJson.ExtractedMethod> apiSpecMethodsForResource;
             try (Reader r = new FileReader(f)) {
               apiSpecMethodsForResource = ext1.extract(r);
             }
-            apiSpecMethods.put(f.getAbsolutePath(), apiSpecMethodsForResource);
+            for (ApiSpecMethodExtractorJson.ExtractedMethod m: apiSpecMethodsForResource) {
+              ApiSpecMethodWithLocation apiSpecMethod = new ApiSpecMethodWithLocation();
+              apiSpecMethod.method = m;
+              apiSpecMethod.location = f;
+              apiSpecMethods.add(apiSpecMethod);
+            }
           }
         }
 
-        Map<String, List<JaxrsMethodExtractorCompiled.ExtractedMethod>> jaxrsMethods;
+        List<JaxrsMethodWithLocation> jaxrsMethods;
         {
-          jaxrsMethods = new HashMap<>();
-
+          jaxrsMethods = new ArrayList<>();
           JaxrsMethodExtractorCompiled ext2;
           {
             List<File> jars = new ArrayList<>();
@@ -427,44 +447,124 @@ public class Main {
             ext2 = new JaxrsMethodExtractorCompiled(projectClasspathClassDirs, jars, projectSourceRootDirs);
           }
 
-          for (String r : jaxrsAdapters) {
-            List<JaxrsMethodExtractorCompiled.ExtractedMethod> jaxrsMethodsForResource = ext2.extract(r);
-            jaxrsMethods.put(r, jaxrsMethodsForResource);
-          }
-        }
-
-
-        List<Method> apiSpecMethodsAll = new ArrayList<>();
-        for (List<ApiSpecMethodExtractorJson.ExtractedMethod> ms: apiSpecMethods.values()) {
-          for (ApiSpecMethodExtractorJson.ExtractedMethod m: ms) {
-            apiSpecMethodsAll.add(m.method);
-          }
-        }
-        List<Method> jaxrsMethodsAll = new ArrayList<>();
-        for (List<JaxrsMethodExtractorCompiled.ExtractedMethod> ms: jaxrsMethods.values()) {
-          for (JaxrsMethodExtractorCompiled.ExtractedMethod m: ms) {
-            jaxrsMethodsAll.add(m.method);
-          }
-        }
-
-        Matcher.MatchParams params = new Matcher.MatchParams(apiSpecMethodsAll, jaxrsMethodsAll);
-        Matcher.MatchResult matchResult = new MatcherImpl().match(params);
-
-        if (matchResult.nonDocumentedMethods != null && !matchResult.nonDocumentedMethods.isEmpty() ||
-                matchResult.nonImplementedMethods != null && !matchResult.nonImplementedMethods.isEmpty()) {
-          System.out.println("Match failed");
-
-          if (matchResult.nonDocumentedMethods != null && !matchResult.nonDocumentedMethods.isEmpty()) {
-            for (Method nonDocumentedMethod: matchResult.nonDocumentedMethods) {
-              System.out.println("Non-documented method at " + nonDocumentedMethod.location().asString() + ": " + nonDocumentedMethod.asString());
+          for (String classname : jaxrsAdapters) {
+            List<JaxrsMethodExtractorCompiled.ExtractedMethod> jaxrsMethodsForResource = ext2.extract(classname);
+            for (JaxrsMethodExtractorCompiled.ExtractedMethod m: jaxrsMethodsForResource) {
+              JaxrsMethodWithLocation jaxrsMethod = new JaxrsMethodWithLocation();
+              jaxrsMethod.method = m;
+              jaxrsMethod.location = classname;
+              jaxrsMethods.add(jaxrsMethod);
             }
           }
-          if (matchResult.nonImplementedMethods != null && !matchResult.nonImplementedMethods.isEmpty()) {
-            for (Method nonImplementedMethod: matchResult.nonImplementedMethods) {
-              System.out.println("Non-implemented method at " + nonImplementedMethod.location().asString() + ": " + nonImplementedMethod.asString());
+        }
+
+        // create method map and warn none or multiple mappings
+        class MethodMapping {
+          public ApiSpecMethodWithLocation apiSpecMethod;
+          public JaxrsMethodWithLocation jaxrsMethod;
+        }
+        List<MethodMapping> methodMappings;
+        {
+          methodMappings = new ArrayList<>();
+          MethodMapper mapper = new MethodMapperImpl();
+
+          {
+            // straight check
+            Iterator<ApiSpecMethodWithLocation> it = apiSpecMethods.iterator();
+            while (it.hasNext()) {
+              ApiSpecMethodWithLocation apiSpecMethod = it.next();
+              List<JaxrsMethodWithLocation> mappings = new ArrayList<>();
+              for (JaxrsMethodWithLocation jaxrsMethod : jaxrsMethods) {
+                if (mapper.map(apiSpecMethod.method.method, jaxrsMethod.method.method)) {
+                  mappings.add(jaxrsMethod);
+                }
+              }
+              if (mappings.size() == 0) {
+                System.out.println("FAIL: no Jaxrs method found for the ApiSpec method "
+                        + apiSpecMethod.location.getAbsolutePath() + ": "
+                        + apiSpecMethod.method.method.httpMethod() + " " + apiSpecMethod.method.method.path());
+                success = false;
+                it.remove();
+
+              } else if (mappings.size() > 1) {
+                System.out.println("FAIL: multiple Jaxrs methods found for the ApiSpec method "
+                        + apiSpecMethod.location.getAbsolutePath() + ": "
+                        + apiSpecMethod.method.method.httpMethod() + " " + apiSpecMethod.method.method.path());
+                for (JaxrsMethodWithLocation mapping : mappings) {
+                  System.out.println("  " + mapping.location + ": " + mapping.method.method.httpMethod() + " " + mapping.method.method.path());
+                }
+
+                success = false;
+                it.remove();
+                for (JaxrsMethodWithLocation mapping : mappings) {
+                  jaxrsMethods.remove((JaxrsMethodWithLocation) mapping);
+                }
+
+              } else {
+                // single match, will be captured after the reverse check
+              }
             }
           }
-        } else {
+
+          {
+            // reverse check
+            Iterator<JaxrsMethodWithLocation> it = jaxrsMethods.iterator();
+            while (it.hasNext()) {
+              JaxrsMethodWithLocation jaxrsMethod = it.next();
+              List<ApiSpecMethodWithLocation> mappings = new ArrayList<>();
+              for (ApiSpecMethodWithLocation apiSpecMethod : apiSpecMethods) {
+                if (mapper.map(apiSpecMethod.method.method, jaxrsMethod.method.method)) {
+                  mappings.add(apiSpecMethod);
+                }
+              }
+              if (mappings.size() == 0) {
+                System.out.println("FAIL: no ApiSpec method found for the Jaxrs method "
+                        + jaxrsMethod.location + ": "
+                        + jaxrsMethod.method.method.httpMethod() + " " + jaxrsMethod.method.method.path());
+
+                success = false;
+                it.remove();
+
+              } else if (mappings.size() > 1) {
+                System.out.println("FAIL: multiple ApiSpec methods found for the Jaxrs method "
+                        + jaxrsMethod.location + ": "
+                        + jaxrsMethod.method.method.httpMethod() + " " + jaxrsMethod.method.method.path());
+                for (ApiSpecMethodWithLocation mapping : mappings) {
+                  System.out.println("  " + mapping.location.getAbsolutePath() + ": " + mapping.method.method.httpMethod() + " " + mapping.method.method.path());
+                }
+
+                success = false;
+                it.remove();
+                for (ApiSpecMethodWithLocation mapping : mappings) {
+                  jaxrsMethods.remove((ApiSpecMethodWithLocation) mapping);
+                }
+
+              } else {
+                // single mapping found
+                MethodMapping mm = new MethodMapping();
+                mm.apiSpecMethod = mappings.get(0);
+                mm.jaxrsMethod = jaxrsMethod;
+                methodMappings.add(mm);
+              }
+            }
+          }
+        }
+
+
+
+        // match methods
+        MethodMatcher matcher = new MethodMatcherImpl();
+        for (MethodMapping mm: methodMappings) {
+          if (!matcher.match(mm.jaxrsMethod.method.method, mm.apiSpecMethod.method.method)) {
+            System.out.println("FAIL: Method match failed:");
+            System.out.println("  " + mm.jaxrsMethod.location + ": " + mm.jaxrsMethod.method.method.httpMethod() + " " + mm.jaxrsMethod.method.method.path());
+            System.out.println("  <=> " + mm.apiSpecMethod.location.getAbsolutePath() + ": " + mm.apiSpecMethod.method.method.httpMethod() + " " + mm.jaxrsMethod.method.method.path());
+
+            success = false;
+          }
+        }
+
+        if (success) {
           System.out.println("Match succeeded");
         }
 
