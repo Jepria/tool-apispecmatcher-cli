@@ -8,7 +8,6 @@
   <artifactId>apispecmatcher-cli</artifactId>
   <packaging>jar</packaging>
   <version>1.0.0</version>
-
   <build>
     <plugins>
       <plugin>
